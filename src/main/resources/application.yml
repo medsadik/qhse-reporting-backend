@@ -1,0 +1,18 @@
+spring:
+  datasource:
+    taskmodified:
+      jdbc-url: jdbc:postgresql://192.168.1.160:5432/Tasks_modified1
+      username: postgres
+      password: Cms@2025
+      driver-class-name: org.postgresql.Driver
+
+    taskcreated:
+      jdbc-url: jdbc:postgresql://192.168.1.160:5432/Tasks_created
+      username: postgres
+      password: Cms@2025
+      driver-class-name: org.postgresql.Driver
+    forms:
+      jdbc-url: jdbc:postgresql://192.168.1.160:5432/Forms1
+      username: postgres
+      password: Cms@2025
+      driver-class-name: org.postgresql.Driver
