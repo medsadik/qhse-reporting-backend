@@ -26,19 +26,20 @@ public class IndicateurSstDao {
     public IndicateurSstDao(@Qualifier("formsJdbcTemplate") JdbcTemplate taskModifiedJdbcTemplate) {
         this.formsJdbcTemplate = taskModifiedJdbcTemplate;
     }
-    public BonnesPratiquesStatsDto getBonnesPratiquesStats(String projetPattern) {
+
+    public BonnesPratiquesStatsDto getBonnesPratiquesStats(String projetPattern,String type) {
         String sql = """
         WITH filtered AS (
             SELECT *
             FROM public."Fiche des Bonnes pratiques"
-            WHERE projet LIKE ? AND "Type" = 'SST'
+            WHERE projet LIKE ? AND "Type" = '%s'
         )
         SELECT
             COUNT(*) AS total_count,
             MAX("Date de création") AS latest_creation_date,
             ARRAY_AGG("Bonnes pratiques") AS bonnes_pratiques_list
         FROM filtered
-        """;
+        """.formatted(type);
 
         return formsJdbcTemplate.queryForObject(sql,new Object[]{projetPattern},(rs, rowNum) -> {
             int totalCount = rs.getInt("total_count");
@@ -280,4 +281,184 @@ public class IndicateurSstDao {
         );
 
     }
+
+    public List<NameObjectDto> getSuInfo(String projetPattern) {
+
+        String sql = """
+                SELECT 'Nb Su' AS name, COUNT(DISTINCT id)::TEXT AS value
+                FROM public."Fiche Simulation d'urgence"
+                WHERE projet LIKE ?
+                
+                UNION ALL
+                
+                SELECT 'IM Su' AS name, COUNT(DISTINCT id)::TEXT AS value
+                FROM public."Fiche Simulation d'urgence"
+                WHERE projet LIKE ?
+                  AND "Date de création"::timestamp >= date_trunc('month', CURRENT_DATE)
+                  AND "Date de création"::timestamp < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')
+                
+                UNION ALL
+                
+                SELECT 'Date Simulation' AS name, "Date Simulation d'urgence"::TEXT AS value
+                FROM (
+                    SELECT "Date Simulation d'urgence"
+                    FROM public."Fiche Simulation d'urgence"
+                    WHERE projet LIKE ?
+                    ORDER BY "Date Simulation d'urgence" DESC
+                    LIMIT 1
+                ) AS sub1
+                
+                UNION ALL
+                
+                SELECT 'Thème Simulation' AS name, "Thème de la simulation"::TEXT AS value
+                FROM (
+                    SELECT "Thème de la simulation"
+                    FROM public."Fiche Simulation d'urgence"
+                    WHERE projet LIKE ?
+                    ORDER BY "Date Simulation d'urgence" DESC
+                    LIMIT 1
+                ) AS sub2;
+                """;
+
+        return getNameObjetDataByDynamicQuery(
+                formsJdbcTemplate,
+                sql,
+                new Object[]{projetPattern,projetPattern,projetPattern,projetPattern},
+                "name",
+                "value"
+        );
+    }
+
+    public List<NameValueDto> getGlobalTableInfoGrouped(String tableName,String groupedColumn,String count , String projetPattern) {
+        String sql = """
+                SELECT "%s" as name, COUNT(%s) as value
+                FROM public."%s"
+                WHERE "projet" LIKE ?
+                GROUP BY "%s";
+                """.formatted(groupedColumn,count,tableName,groupedColumn);
+
+        return getNameValueDataByDynamicQuery(
+                formsJdbcTemplate,
+                sql,
+                new Object[]{projetPattern},
+                "name",
+                "value"
+        );
+    }
+
+    public List<NameValueDto> getMensuelTableInfoGrouped(String groupedColumn,String count ,String projetPattern,LocalDate start,LocalDate end) {
+        String sql = """
+                SELECT "%s" as name, COUNT(%s) as value
+                    FROM public."Fiche Simulation d'urgence"
+                    WHERE "projet" LIKE ?
+                      AND to_timestamp("Date de création", 'YYYY-MM-DD HH24:MI:SS') >= ? - INTERVAL '30 days'
+                      AND to_timestamp("Date de création", 'YYYY-MM-DD HH24:MI:SS') <= ?
+                    GROUP BY "%s";
+                """.formatted(groupedColumn,count,groupedColumn);
+
+        return getNameValueDataByDynamicQuery(
+                formsJdbcTemplate,
+                sql,
+                new Object[]{projetPattern,end,end},
+                "name",
+                "value"
+        );
+    }
+
+    public List<NameValueDto> getHebdoTableInfoGrouped(String tableName,String groupedColumn,String count, String projetPattern, LocalDateTime start, LocalDateTime end) {
+        String sql = """
+                SELECT "%s" as name, COUNT(%s) as value
+                    FROM public."%s"
+                    WHERE "projet" LIKE ?
+                and "Date de création"::timestamp >= ?
+                and "Date de création"::timestamp  <=  ?
+                    GROUP BY "%s";
+                """.formatted(groupedColumn,count,tableName,groupedColumn);
+
+        return getNameValueDataByDynamicQuery(
+                formsJdbcTemplate,
+                sql,
+                new Object[]{projetPattern,start,end},
+                "name",
+                "value"
+        );
+    }
+
+    public NameValueDto getTotalRecrutementLocal(String projetPattern) {
+        String sql = """
+        SELECT COUNT(*) AS total 
+        FROM public."Fiche suivi du recrutement local"
+        WHERE projet LIKE ? AND "Date de sortie" IS NULL
+    """;
+
+        return formsJdbcTemplate.queryForObject(
+                sql,
+                new Object[]{projetPattern},
+                (rs, rowNum) -> new NameValueDto("Recrutement local Total", rs.getInt("total"))
+        );
+    }
+
+    public NameValueDto getTotalRecrutementLocalADate(String projetPattern,LocalDate start,LocalDate end) {
+        String sql = """
+                SELECT
+    ROUND(
+        COUNT(*)::decimal / (
+            SELECT "T. Eff./J"::decimal
+            FROM public."Fiche d'effectifs"
+            WHERE projet LIKE ?
+                AND "Date"::date >= ?
+              AND "Date"::date <= ?
+            ORDER BY "Date" DESC
+            LIMIT 1
+        ) * 100, 2
+    ) AS ratio_percentage
+FROM public."Fiche suivi du recrutement local"
+WHERE projet LIKE ?
+  AND "Date de sortie" IS NULL
+    """;
+
+        return formsJdbcTemplate.queryForObject(
+                sql,
+                new Object[]{projetPattern,start,end,projetPattern},
+                (rs, rowNum) -> new NameValueDto("Recrutement Local A Date", rs.getInt("ratio_percentage"))
+        );
+    }
+
+    public List<NameValueDto> getParcStats(String projetPattern) {
+        String sql = """
+                SELECT 'Total Parc' AS name, COUNT(*) AS value
+                FROM public."Fiche suivi du parc matériel"
+                WHERE projet LIKE ?
+                UNION ALL
+                SELECT 'Parc actif' AS name, COUNT(*) AS value
+                FROM public."Fiche suivi du parc matériel"
+                WHERE projet LIKE ? AND "Date de sortie" IS NULL;
+                """;
+
+        return getNameValueDataByDynamicQuery(
+                formsJdbcTemplate,
+                sql,
+                new Object[]{projetPattern,projetPattern},
+                "name",
+                "value"
+        );
+    }
+    public List<NameValueDto> getParcTypologies(String projetPattern) {
+        String sql = """
+                    SELECT "Catégorie de l'engin" as name,count(*) as value
+                    FROM public."Fiche suivi du parc matériel"
+                    where projet like ? and "Date de sortie" is null
+                    group by "Catégorie de l'engin"
+                    order by value desc
+                """;
+
+        return getNameValueDataByDynamicQuery(
+                formsJdbcTemplate,
+                sql,
+                new Object[]{projetPattern},
+                "name",
+                "value"
+        );
+    }
+
 }

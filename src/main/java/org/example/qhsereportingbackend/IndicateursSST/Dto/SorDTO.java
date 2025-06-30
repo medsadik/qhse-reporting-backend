@@ -6,7 +6,7 @@ import org.example.qhsereportingbackend.GlobalDto.NameValueDto;
 import java.util.List;
 
 public record SorDTO(List<NameValueDto> tableStats, List<NameValueDto> globalStatut,
-                     List<NameStatusDto> globalStatuByCategorie,
+                     List<NameValueDto> statutBySD, List<NameStatusDto> globalStatuByCategorie,
                      List<NameStatusDto> globalStatuByEst,
                      List<NameStatusDto> hebdoStatuByCategorie,
                      List<NameStatusDto> hebdoStatuByEst, List<NameValueDto> reactiviteByCategorie,
